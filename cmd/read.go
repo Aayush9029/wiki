@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var fullArticle bool
+var summaryOnly bool
 
 var readCmd = &cobra.Command{
 	Use:   "read <title>",
@@ -20,7 +20,7 @@ var readCmd = &cobra.Command{
 }
 
 func init() {
-	readCmd.Flags().BoolVarP(&fullArticle, "full", "f", false, "show full article text")
+	readCmd.Flags().BoolVarP(&summaryOnly, "summary", "s", false, "show summary only")
 	rootCmd.AddCommand(readCmd)
 }
 
@@ -28,21 +28,20 @@ func runRead(cmd *cobra.Command, args []string) error {
 	title := strings.Join(args, " ")
 	client := wikipedia.NewClient()
 
-	if fullArticle {
-		return showFullArticle(client, title)
+	if summaryOnly {
+		summary, err := client.Summary(title)
+		if err != nil {
+			return fmt.Errorf("failed to fetch article: %w", err)
+		}
+		return displaySummary(summary)
 	}
-	summary, err := client.Summary(title)
-	if err != nil {
-		return fmt.Errorf("failed to fetch article: %w", err)
-	}
-	return displaySummary(summary)
+	return showFullArticle(client, title)
 }
 
 func displaySummary(s *wikipedia.Summary) error {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
 	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 	urlStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Underline(true)
-	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 
 	fmt.Println()
 	fmt.Println(titleStyle.Render(s.Title))
@@ -62,8 +61,6 @@ func displaySummary(s *wikipedia.Summary) error {
 		fmt.Println(urlStyle.Render(s.ContentURLs.Desktop.Page))
 	}
 
-	fmt.Println()
-	fmt.Println(hintStyle.Render(fmt.Sprintf("Full article: wiki read --full %q", s.Title)))
 	return nil
 }
 
@@ -74,6 +71,7 @@ func showFullArticle(client *wikipedia.Client, title string) error {
 	}
 
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	urlStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Underline(true)
 
 	fmt.Println()
 	fmt.Println(titleStyle.Render(article.Title))
@@ -86,6 +84,7 @@ func showFullArticle(client *wikipedia.Client, title string) error {
 		fmt.Print(rendered)
 	}
 
+	fmt.Println(urlStyle.Render(fmt.Sprintf("https://en.wikipedia.org/wiki/%s", strings.ReplaceAll(article.Title, " ", "_"))))
 	return nil
 }
 
@@ -107,7 +106,6 @@ func formatSections(text string) string {
 	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "==") && strings.HasSuffix(trimmed, "==") {
-			// Count heading level
 			level := 0
 			for _, r := range trimmed {
 				if r == '=' {
@@ -117,7 +115,7 @@ func formatSections(text string) string {
 				}
 			}
 			heading := strings.Trim(trimmed, "= ")
-			prefix := strings.Repeat("#", level-1) // == maps to ##, === maps to ###
+			prefix := strings.Repeat("#", level-1)
 			if prefix == "" {
 				prefix = "##"
 			}
